@@ -1,2 +1,9 @@
-# LCG
-Maya environment setup. Delivers tools and integrate scripts easily. Automates the setup in a team setting and adds callbacks to manage scene preferences and source control. 
+# AdenTK
+
+A technical art toolkit for Autodesk Maya. Currently contains the environment
+setup framework, with rigging tools and other utilities to come.
+
+## Credits
+
+The environment setup is based on Christian Akesson's article
+[Autodesk Maya Environment Setup](https://learncreategame.com/techart/maya-environment-setup/).
