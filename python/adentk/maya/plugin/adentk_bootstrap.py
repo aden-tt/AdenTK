@@ -18,6 +18,15 @@ import traceback
 import os
 import sys
 import inspect
+import logging
+
+# Shim: PyMEL calls logging._acquireLock, which Python 3.13 removed. Must run before importing pymel.
+# Otherwise, importing PyMEL on a 3.13-based Maya (2027) fails with: AttributeError: module 'logging' has no attribute '_acquireLock'
+# Does not affect older Mayas that still have the functions
+if not hasattr(logging, '_acquireLock'):
+    logging._acquireLock = lambda: logging._lock.acquire()
+    logging._releaseLock = lambda: logging._lock.release()
+
 import pymel.core.language
 import pymel.util
 
