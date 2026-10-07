@@ -1,7 +1,7 @@
 # AdenTK
 
-A technical art toolkit for Autodesk Maya. Currently contains the environment
-setup framework, with rigging tools and other utilities to come.
+A technical art toolkit for Autodesk Maya. Currently contains the environment setup framework, with rigging tools and other utilities to come.
+Created for personal use and learning purposes
 
 ## Credits
 
