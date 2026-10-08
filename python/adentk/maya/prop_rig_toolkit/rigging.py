@@ -19,6 +19,8 @@ NAMING = {
 
 class RiggingToolkit:
     def __init__(self):
+        self.utils = controls.BSControlsUtils()
+        self.main_grp = None
         self.ctrl_grp = None
         self.jnt_grp = None
         self.geo_grp = None
@@ -30,107 +32,99 @@ class RiggingToolkit:
         self.joints_list = []
         self.control_list = []
 
-    def build_rig(self, mode: str = "Full Rig", makeRoot: bool = True):
-        self.objects_list.append(cmds.ls(sl=True))
-        self.mesh_xform_list.append([obj for obj in self.objects_list if cmds.listRelatives(obj, type="mesh", path=True) is not None])
+    def build_rig(self, shape: str, mode: str = "FullRig", makeRoot: bool = True):
+        self.objects_list = cmds.ls(sl=True) or []
+        self.mesh_xform_list =[
+            obj for obj in self.objects_list
+            if cmds.listRelatives(obj, type="mesh", path=True) is not None
+        ]
 
         if makeRoot:
             cmds.select(clear=True)
             self.root_jnt = cmds.joint( n=NAMING["root_jnt"], sc=False )
 
-        self.geo_grp = cmds.group( n=NAMING["geo_grp"], empty=True )
-        self.jnt_grp = cmds.group( n=NAMING["jnt_grp"], empty=True )
-        self.ctrl_grp = cmds.group( n=NAMING["ctrl_grp"], empty=True )
+        # Create Main Group and Sub-Groups
+        self.main_grp = cmds.group( n=NAMING["main_grp"], em=True )
+        self.geo_grp = cmds.group( n=NAMING["geo_grp"], em=True )
+        self.jnt_grp = cmds.group( n=NAMING["jnt_grp"], em=True )
+        self.ctrl_grp = cmds.group( n=NAMING["ctrl_grp"], em=True )
 
-        #self.create_joints()
-        #self.create_controls()
+        cmds.parent([self.geo_grp, self.jnt_grp, self.ctrl_grp], self.main_grp)
 
+        # Process & Rename Meshes, then Parent under geo_grp
+        processed_geo_list = []
+        for obj in self.mesh_xform_list:
+            geo_name = obj
+            # Add suffix if it doesn't already end with geo_sfx
+            if not obj.endswith(NAMING["geo_sfx"]):
+                geo_name = cmds.rename(obj, obj + NAMING["geo_sfx"])
 
+            # Parent under geo_grp
+            cmds.parent(geo_name, self.geo_grp)
+            processed_geo_list.append(geo_name)
+
+        self.mesh_xform_list = processed_geo_list
+
+        self.create_joints()
+        self.create_controls(shape, self.joints_list)
+
+        # Lock and hide geo and joints
+        for grp in [self.main_grp, self.geo_grp, self.jnt_grp]:
+            if grp and cmds.objExists(grp):
+                self.lock_and_hide(grp)
 
     def create_joints(self, makeRoot: bool = True):
+        self.joints_list = []
+        root_joint = None
 
         if makeRoot:
             cmds.select(clear=True)
-            rootJoint = cmds.joint(name=NAMING["root_jnt"], sc=False)
-
-        # Ensure the list contains only mesh objects
-        if len(self.mesh_xform_list) == 0:
-            cmds.error("Please select at least one mesh")
+            root_joint = cmds.joint(n=NAMING["root_jnt"], sc=False)
+            cmds.parent(root_joint, self.jnt_grp)
+            self.root_jnt = root_joint
 
         for obj in self.mesh_xform_list:
-            # Add a joint to pivot center of each selection, if root option is checked, parent all joins to it
             cmds.select(clear=True)
 
-            # Create a joint at the mesh pivot location
-            pivotPos = cmds.xform( obj, query=True, pivots=True, worldSpace=True )
-            jnt = cmds.joint( name=obj + NAMING["jnt_sfx"], sc=False, position=[pivotPos[0], pivotPos[1], pivotPos[2]] )
+            # Create joint at object pivot
+            pivot_pos = cmds.xform(obj, query=True, pivots=True, worldSpace=True)
+            jnt = cmds.joint(n=obj + NAMING["jnt_sfx"], sc=False, position=pivot_pos[:3])
+
+            if root_joint:
+                jnt = cmds.parent(jnt, root_joint)[0]
+            else:
+                cmds.parent(jnt, self.jnt_grp)
+
+            # Skin mesh to joint
+            cmds.skinCluster(obj, jnt, toSelectedBones=True)
             self.joints_list.append(jnt)
 
+    def create_controls(self, shape: str, joints: List):
+        self.offset_control_list = []
+        self.control_list = []
 
-    def place_joints(self, objects: List):
         cmds.select(clear=True)
-        for obj in objects:
-            world_pivot = cmds.xform(obj, query=True, worldSpace=True)
-            jnt = cmds.joint(name=obj.replace( NAMING["geo_sfx"], NAMING["jnt_sfx"] ), sc=False)
+        for jnt in joints:
+            off_name = jnt.replace(NAMING["jnt_sfx"], NAMING["off_sfx"])
+            offset_grp = cmds.group(em=True, n=off_name)
+            self.offset_control_list.append(offset_grp)
 
-    def create_controls(self, joints: List):
-        cmds.select(clear=True)
-        for jnt in self.joints_list:
-            offsetGrp = cmds.group(em=True, name=jnt.replace( NAMING["jnt_sfx"], NAMING["offset_sfx"] ))
-            self.offset_control_list.append(offsetGrp)
-
-
-    def create_parent_group(self, name: str, objects: List) -> str:
-        pass
-
-
-"""
-    def OLD_createJoints(objectList, makeRoot=True):
-        jntList = []
-        rootJoint = None
-
-        if makeRoot:
-            cmds.select(clear=True)
-            rootJoint = cmds.joint(name=naming.root_jnt, sc=False)
-
-        # Ensure the list contains only mesh objects
-        meshXformList = [obj for obj in objectList if cmds.listRelatives(obj, type="mesh", path=True) is not None]
-        if len(meshXformList) == 0:
-            cmds.error(" Please select at least one mesh")
-
-        for obj in meshXformList:
-            # Add a joint to pivot center of each selection, if root option is checked, parent all joins to it
-            cmds.select(clear=True)
-
-            # Create a joint at the mesh pivot location
-            pivotPos = cmds.xform(obj, query=True, pivots=True, worldSpace=True)
-            jnt = cmds.joint(name=obj + naming.jnt_suffix, sc=False, position=[pivotPos[0], pivotPos[1], pivotPos[2]])
-
-            # Create an empty offset group
-            offsetGroup = cmds.group(n=obj+naming.offset_suffix , empty=True)
-
-            # Position offset group at joint
+            # Match joint transform
             jnt_pos = cmds.xform(jnt, query=True, translation=True, worldSpace=True)
-            cmds.xform(offsetGroup, translation=jnt_pos, worldSpace=True)
+            cmds.xform(offset_grp, translation=jnt_pos, worldSpace=True)
 
-            # Create control at joint location
-            control = cmds.circle(n=obj+naming.ctrl_suffix)
-            cmds.parent(control, offsetGroup)
-            cmds.xform(control, translation=[0, 0, 0], rotation=[0, 0, 0])
+            # Create control curve and parent under offset group
+            ctrl = self.utils.bsDrawCurve(curve=shape, thickness=1.0)
+            cmds.parent(ctrl, offset_grp)
+            cmds.xform(ctrl, translation=[0, 0, 0], rotation=[0, 0, 0])
+            cmds.parent(offset_grp, self.ctrl_grp)
 
             # Constrain joint to control
-            cmds.parentConstraint(control, jnt, mo=True)
+            cmds.parentConstraint(ctrl, jnt, mo=True)
+            self.control_list.append(ctrl)
 
-            # Skin the mesh geometry to the joint
-            if makeRoot:
-                jnt = cmds.parent(jnt, rootJoint)
-
-            cmds.skinCluster(obj, jnt, toSelectedBones=True)
-            jntList.append(jnt)
-
-        if makeRoot:
-            return jntList, rootJoint
-        else:
-            return jntList
-
-"""
+    def lock_and_hide(self, node: str):
+        channels = ["tx", "ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz"]
+        for attr in channels:
+            cmds.setAttr(f"{node}.{attr}", lock=True)
+            cmds.setAttr(f"{node}.{attr}", keyable=False, channelBox=False)

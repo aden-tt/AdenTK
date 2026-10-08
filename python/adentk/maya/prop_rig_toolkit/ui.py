@@ -204,7 +204,10 @@ class PropRiggingUI(QtWidgets.QDialog):
 
         self.makeRootCB = QtWidgets.QCheckBox("Make Root Joint")
         self.makeRootCB.setChecked(True)
+        self.jntRefCB = QtWidgets.QCheckBox("Add Joints to Reference Layer")
+        self.jntRefCB.setChecked(True)
         box_layout.addWidget(self.makeRootCB)
+        box_layout.addWidget(self.jntRefCB)
         self.fullRigBtn = QtWidgets.QPushButton("Full Rig")
         self.jointsOnlyBtn = QtWidgets.QPushButton("Joints Only")
         self.ctrlsOnlyBtn = QtWidgets.QPushButton("Controls Only")
@@ -213,9 +216,27 @@ class PropRiggingUI(QtWidgets.QDialog):
         rig_options_box.addWidget(self.ctrlsOnlyBtn)
         box_layout.addLayout(rig_options_box)
 
-        self.fullRigBtn.clicked.connect(lambda: self.Rigging.build_rig(mode="Full Rig"))
-        self.jointsOnlyBtn.clicked.connect(lambda: self.Rigging.build_rig(mode="Joints Only"))
-        self.ctrlsOnlyBtn.clicked.connect(lambda: self.Rigging.build_rig(mode="Controls Only"))
+        self.fullRigBtn.clicked.connect(
+            lambda: self.Rigging.build_rig(
+                shape=self.selected_shape,
+                mode="Full Rig",
+                makeRoot=self.makeRootCB.isChecked()
+            )
+        )
+        self.jointsOnlyBtn.clicked.connect(
+            lambda: self.Rigging.build_rig(
+                shape=self.selected_shape,
+                mode="Joints Only",
+                makeRoot=self.makeRootCB.isChecked()
+            )
+        )
+        self.ctrlsOnlyBtn.clicked.connect(
+            lambda: self.Rigging.build_rig(
+                shape=self.selected_shape,
+                mode="Controls Only",
+                makeRoot=self.makeRootCB.isChecked()
+            )
+        )
 
         # ------------ MODIFY CONTROLS ------------------
         modify_ctrls_label = QtWidgets.QLabel(text="Modify Controls")
