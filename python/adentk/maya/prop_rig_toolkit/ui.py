@@ -277,7 +277,7 @@ class PropRiggingUI(QtWidgets.QDialog):
         box_layout.addStretch()
 
     def on_select_shape(self, shape: str, clicked_btn: QtWidgets.QPushButton):
-        # toggle active/inactive button colors
+        # toggle active/inactive button modes
         self.selected_shape_btn.setStyleSheet("background-color: none")
         clicked_btn.setStyleSheet("background-color: red")
 
@@ -285,20 +285,17 @@ class PropRiggingUI(QtWidgets.QDialog):
         self.selected_shape = shape
 
         selection = cmds.ls(sl=True, l=True)
+        if not selection:
+            return
 
-        if selection:
-            for objs in selection:
-                # Getting and checking node type to act on shape level
-                nType = cmds.nodeType(objs)
+        # replace curve with new shape
+        temp_curve = self.ControlUtils.bsDrawCurve(curve=self.selected_shape)
+        for s in selection:
+            self.ControlUtils.bsReplaceShape(target=s, replacement=temp_curve, mirror=False)
 
-                if nType == 'transform':
-                    objs = cmds.listRelatives(objs, s=True)
-                elif nType == 'shape':
-                    pass
-                else:
-                    cmds.error('Selected object(s) is not a nurbs curve.')
+        cmds.delete(temp_curve)
 
-                print(objs)
+
 
 
 def show_ui():

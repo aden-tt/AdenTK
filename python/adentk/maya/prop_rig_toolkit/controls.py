@@ -20,7 +20,7 @@ import maya.cmds as cmds
 class BSControlsUtils:
 
     # Function to draw nurbs curves from dictionary data and user input.
-    def bsDrawCurve(self, curve, thickness):
+    def bsDrawCurve(self, curve, thickness=1.0):
         # Exception for Circle shape.
         if curve == 'Circle':
             crv = cmds.circle(d=3, r=2, nr=[0, 1, 0], ch=False)
