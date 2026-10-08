@@ -274,6 +274,8 @@ class PropRiggingUI(QtWidgets.QDialog):
         modify_ctrls_grid.addWidget(self.rotate_x_neg, 2, 1)
         modify_ctrls_grid.addWidget(self.rotate_y_neg, 2, 2)
         modify_ctrls_grid.addWidget(self.rotate_z_neg, 2, 3)
+
+        # Make widget compact
         box_layout.addStretch()
 
     def on_select_shape(self, shape: str, clicked_btn: QtWidgets.QPushButton):
@@ -289,12 +291,7 @@ class PropRiggingUI(QtWidgets.QDialog):
             return
 
         # replace curve with new shape
-        temp_curve = self.ControlUtils.bsDrawCurve(curve=self.selected_shape)
-        for s in selection:
-            self.ControlUtils.bsReplaceShape(target=s, replacement=temp_curve, mirror=False)
-
-        cmds.delete(temp_curve)
-
+        self.Rigging.replaceControls(shape, selection)
 
 
 
@@ -309,6 +306,5 @@ def show_ui():
     qt_window.show()
 
     return qt_window
-
 
 show_ui()

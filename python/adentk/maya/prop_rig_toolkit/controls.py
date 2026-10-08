@@ -17,6 +17,8 @@ copies or substantial portions of the Software.
 import maya.cmds as cmds
 
 
+
+
 class BSControlsUtils:
 
     # Function to draw nurbs curves from dictionary data and user input.
@@ -177,6 +179,8 @@ class BSControlsUtils:
             cmds.textField(textField, e=True, tx=text)
 
         return sel
+
+
 
     # Function to replace shape(s) with a loaded replacement(s).
     def bsReplaceShape(self, target, replacement, mirror):

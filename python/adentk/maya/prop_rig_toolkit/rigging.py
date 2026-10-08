@@ -107,8 +107,10 @@ class RiggingToolkit:
 
         cmds.select(clear=True)
         for jnt in joints:
-            # Create offset group
+            ctrl_name = jnt.replace(NAMING["jnt_sfx"], NAMING["ctrl_sfx"])
             off_name = jnt.replace(NAMING["jnt_sfx"], NAMING["off_sfx"])
+
+            # Create offset group
             offset_grp = cmds.group(em=True, n=off_name)
             self.offset_control_list.append(offset_grp)
 
@@ -116,8 +118,10 @@ class RiggingToolkit:
             jnt_pos = cmds.xform(jnt, query=True, translation=True, worldSpace=True)
             cmds.xform(offset_grp, translation=jnt_pos, worldSpace=True)
 
-            # Create control curve and parent under offset group
+            # Create control curve, rename it, and parent under offset group
             ctrl = self.utils.bsDrawCurve(curve=shape, thickness=1.0)
+            ctrl = cmds.rename(ctrl, ctrl_name)
+
             cmds.parent(ctrl, offset_grp)
             cmds.xform(ctrl, translation=[0, 0, 0], rotation=[0, 0, 0])
             cmds.parent(offset_grp, self.ctrl_grp)
@@ -125,6 +129,27 @@ class RiggingToolkit:
             # Constrain joint to control
             cmds.parentConstraint(ctrl, jnt, mo=True)
             self.control_list.append(ctrl)
+
+    def replaceControls(self, shape, selection):
+        # Draw temporary reference curve
+        temp_curve = self.utils.bsDrawCurve(curve=shape)
+
+        for sel in selection:
+            if not sel.endswith(NAMING["ctrl_sfx"]):
+                ctrl_name = f"{sel}{NAMING['ctrl_sfx']}"
+            else:
+                ctrl_name = sel
+
+            # Swap the shape onto the target control
+            self.utils.bsReplaceShape(target=sel, replacement=temp_curve, mirror=False)
+
+            # Ensure proper naming
+            if cmds.objExists(sel) and sel != ctrl_name:
+                cmds.rename(sel, ctrl_name)
+
+        # Clean up the temporary curve
+        if cmds.objExists(temp_curve):
+            cmds.delete(temp_curve)
 
     def lock_and_hide_grp(self, geo, jnt):
         """Locks and hides transform attributes for all children in geometry and joint groups"""
