@@ -41,8 +41,6 @@ class RiggingToolkit:
             if cmds.listRelatives(obj, type="mesh", path=True) is not None
         ]
 
-
-
         # Create Main Group and Sub-Groups
         self.main_grp = cmds.group( n=NAMING["main_grp"], em=True )
         self.geo_grp = cmds.group( n=NAMING["geo_grp"], em=True )
@@ -111,7 +109,8 @@ class RiggingToolkit:
 
             # Create joint at object pivot
             pivot_pos = cmds.xform(obj, query=True, pivots=True, worldSpace=True)
-            jnt = cmds.joint(n=obj + NAMING["jnt_sfx"], sc=False, position=pivot_pos[:3])
+            jnt_name = obj.replace(NAMING["geo_sfx"], NAMING["jnt_sfx"])
+            jnt = cmds.joint(n=jnt_name, sc=False, position=pivot_pos[:3])
 
             if root_joint:
                 jnt = cmds.parent(jnt, root_joint)[0]
@@ -128,7 +127,7 @@ class RiggingToolkit:
 
         cmds.select(clear=True)
         for jnt in joints:
-            off_name = jnt.replace(NAMING["geo_sfx"], NAMING["off_sfx"])
+            off_name = jnt.replace(NAMING["jnt_sfx"], NAMING["off_sfx"])
             offset_grp = cmds.group(em=True, n=off_name)
             self.offset_control_list.append(offset_grp)
 
