@@ -31,26 +31,40 @@ class PropRiggingUI(QtWidgets.QDialog):
         super().__init__(parent)
 
         self.setStyleSheet("""
+
             QPushButton {
-                border: 1px solid #3c3c3c;
-                border-radius: 4px;
-                background-color: #2b2b2b;
-                padding: 4px;
+                background-color: none;
+                font-weight: bold;
+                color: white;
             }
-            QPushButton:hover {
-                background-color: #3b3b3b;
-                border-color: #555555;
+            QLabel {
+                padding: 2px;
+                margin: 0px;
+                qproperty-alignment: AlignCenter;
+                font-weight: bold;
+                font-size: 14px;
+                color: white;
+                background-color: #333;
             }
         """)
 
         self.ControlUtils = controls.BSControlsUtils()
+        self.Rigging = rigging.RiggingToolkit()
 
         self.setObjectName(self.OBJECT_NAME)
         self.setWindowTitle(self.WINDOW_TITLE)
-        self.resize(400, 600)
-        self.box_layout = QtWidgets.QVBoxLayout(self)
-        self.cv_shapes_grid = QtWidgets.QGridLayout()
-        self.box_layout.addLayout(self.cv_shapes_grid)
+        self.resize(300, 600)
+
+        box_layout = QtWidgets.QVBoxLayout(self)
+        box_layout.setContentsMargins(10, 10, 10, 10)
+        box_layout.setSpacing(6)
+
+        # ------------ CONTROL SHAPES ------------------
+        ctrl_shapes_label = QtWidgets.QLabel(text="Control Shapes")
+        ctrl_shapes_grid = QtWidgets.QGridLayout()
+        ctrl_shapes_grid.setSpacing(4)
+        box_layout.addWidget(ctrl_shapes_label)
+        box_layout.addLayout(ctrl_shapes_grid)
 
         buttons_data = [
             ("btn_circle", "Circle", "circle.png"),
@@ -76,38 +90,51 @@ class PropRiggingUI(QtWidgets.QDialog):
         for i, (attr_name, label, icon_filename) in enumerate(buttons_data):
             btn = QtWidgets.QPushButton()
             btn.setToolTip(label)
-            btn.setIconSize(QtCore.QSize(64, 64))
+            btn.setIconSize(QtCore.QSize(60, 60))
             btn.setMaximumSize(70, 70)
             # Resolve full absolute path to icon
             icon_path = os.path.join(ICONS_DIR, icon_filename)
             btn.setIcon(QtGui.QIcon(icon_path))
 
-            btn.clicked.connect(
-                lambda checked=False, s=label, b=btn: self.on_select_shape(
-                    shape=s, clicked_btn=b
-                )
-            )
+            btn.clicked.connect(lambda checked=False, s=label, b=btn: self.on_select_shape(shape=s, clicked_btn=b))
             setattr(self, attr_name, btn)
 
             row = i // columns
             col = i % columns
-            self.cv_shapes_grid.addWidget(btn, row, col)
+            ctrl_shapes_grid.addWidget(btn, row, col)
 
+        # Default selected shape is Circle
         self.selected_shape = "Circle"
         self.selected_shape_btn = self.btn_circle
-        self.selected_shape_btn.setStyleSheet("background-color: green")
+        self.selected_shape_btn.setStyleSheet("background-color: red")
+
+        # ------------ RIGGING OPTIONS ------------------
+        rig_options_label = QtWidgets.QLabel(text="Rig Options")
+        rig_options_box = QtWidgets.QHBoxLayout()
+        box_layout.addWidget(rig_options_label)
+        box_layout.addLayout(rig_options_box)
+
+        self.fullRigBtn = QtWidgets.QPushButton("Full Rig")
+        self.jointsOnlyBtn = QtWidgets.QPushButton("Joints Only")
+        self.ctrlsOnlyBtn = QtWidgets.QPushButton("Controls Only")
+        rig_options_box.addWidget(self.fullRigBtn)
+        rig_options_box.addWidget(self.jointsOnlyBtn)
+        rig_options_box.addWidget(self.ctrlsOnlyBtn)
+
+        self.fullRigBtn.clicked.connect(lambda: self.Rigging.build_rig(mode="Full Rig"))
+        self.jointsOnlyBtn.clicked.connect(lambda: self.Rigging.build_rig(mode="Joints Only"))
+        self.ctrlsOnlyBtn.clicked.connect(lambda: self.Rigging.build_rig(mode="Controls Only"))
+        box_layout.addStretch()
 
     def on_select_shape(self, shape: str, clicked_btn: QtWidgets.QPushButton):
         # toggle active/inactive button colors
         self.selected_shape_btn.setStyleSheet("background-color: none")
-        clicked_btn.setStyleSheet("background-color: green")
+        clicked_btn.setStyleSheet("background-color: red")
 
         self.selected_shape_btn = clicked_btn
         self.selected_shape = shape
 
         selection = cmds.ls(sl=True, l=True)
-
-        self.ControlUtils.bsDrawCurve(curve=shape, thickness=1.0)
 
         if selection:
             for objs in selection:
