@@ -226,14 +226,14 @@ class PropRiggingUI(QtWidgets.QDialog):
         self.jointsOnlyBtn.clicked.connect(
             lambda: self.Rigging.build_rig(
                 shape=self.selected_shape,
-                mode="Joints Only",
+                mode="JointsOnly",
                 makeRoot=self.makeRootCB.isChecked()
             )
         )
         self.ctrlsOnlyBtn.clicked.connect(
             lambda: self.Rigging.build_rig(
                 shape=self.selected_shape,
-                mode="Controls Only",
+                mode="ControlsOnly",
                 makeRoot=self.makeRootCB.isChecked()
             )
         )

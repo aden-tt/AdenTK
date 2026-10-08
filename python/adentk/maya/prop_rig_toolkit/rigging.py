@@ -1,7 +1,6 @@
 import maya.cmds as cmds
 import adentk.maya.prop_rig_toolkit.controls as controls
 
-from dataclasses import dataclass
 from typing import List
 
 NAMING = {
@@ -35,13 +34,14 @@ class RiggingToolkit:
         self.control_list = []
 
     def build_rig(self, shape: str, mode: str = "FullRig", makeRoot: bool = True):
+        """Executes the full rigging pipeline for selected mesh objects"""
         self.objects_list = cmds.ls(sl=True) or []
         self.mesh_xform_list =[
             obj for obj in self.objects_list
             if cmds.listRelatives(obj, type="mesh", path=True) is not None
         ]
 
-        # Create Main Group and Sub-Groups
+        # Create Main Group and sub-groups
         self.main_grp = cmds.group( n=NAMING["main_grp"], em=True )
         self.geo_grp = cmds.group( n=NAMING["geo_grp"], em=True )
         self.jnt_grp = cmds.group( n=NAMING["jnt_grp"], em=True )
@@ -49,7 +49,7 @@ class RiggingToolkit:
 
         cmds.parent([self.geo_grp, self.jnt_grp, self.ctrl_grp], self.main_grp)
 
-        # Process & Rename Meshes, then Parent under geo_grp
+        # Process and rename meshes, then parent under geo_grp
         processed_geo_list = []
         for obj in self.mesh_xform_list:
             geo_name = obj
@@ -64,37 +64,16 @@ class RiggingToolkit:
         self.mesh_xform_list = processed_geo_list
 
         self.create_joints()
-        self.create_controls(shape, self.joints_list)
+        if not mode == "JointsOnly":
+            self.create_controls(shape, self.joints_list)
 
         # Lock and hide geo and joints
         self.lock_and_hide_grp(self.geo_grp, self.jnt_grp)
         self.setup_display_layers()
 
-    def setup_display_layers(self):
-        """Creates Display Layers for geometry, controls, and joints."""
-        # Geometry Layer (Reference mode so geo cannot be selected in viewport)
-        if cmds.objExists(NAMING["geo_layer"]):
-            cmds.delete(NAMING["geo_layer"])
-        geo_layer = cmds.createDisplayLayer(name=NAMING["geo_layer"], number=1, empty=True)
-        cmds.editDisplayLayerMembers(geo_layer, self.geo_grp)
-        cmds.setAttr(f"{geo_layer}.displayType", 2)
-
-        # Controls Layer
-        if cmds.objExists(NAMING["ctrl_layer"]):
-            cmds.delete(NAMING["ctrl_layer"])
-        ctrl_layer = cmds.createDisplayLayer(name=NAMING["ctrl_layer"], number=1, empty=True)
-        cmds.editDisplayLayerMembers(ctrl_layer, self.ctrl_grp)
-
-        # Joints Layer (Hidden by default, set to Reference mode)
-        jnt_layer_name = NAMING.get("jnt_layer", "JNT_layer")
-        if cmds.objExists(jnt_layer_name):
-            cmds.delete(jnt_layer_name)
-        jnt_layer = cmds.createDisplayLayer(name=jnt_layer_name, number=1, empty=True)
-        cmds.editDisplayLayerMembers(jnt_layer, self.jnt_grp)
-        cmds.setAttr(f"{jnt_layer}.displayType", 2)
-        cmds.setAttr(f"{jnt_layer}.visibility", 0)
 
     def create_joints(self, makeRoot: bool = True):
+        """Creates joints at mesh pivots and binds them to skin"""
         self.joints_list = []
         root_joint = None
 
@@ -122,11 +101,13 @@ class RiggingToolkit:
             self.joints_list.append(jnt)
 
     def create_controls(self, shape: str, joints: List):
+        """Generates offset groups and control curves for each joint"""
         self.offset_control_list = []
         self.control_list = []
 
         cmds.select(clear=True)
         for jnt in joints:
+            # Create offset group
             off_name = jnt.replace(NAMING["jnt_sfx"], NAMING["off_sfx"])
             offset_grp = cmds.group(em=True, n=off_name)
             self.offset_control_list.append(offset_grp)
@@ -146,6 +127,7 @@ class RiggingToolkit:
             self.control_list.append(ctrl)
 
     def lock_and_hide_grp(self, geo, jnt):
+        """Locks and hides transform attributes for all children in geometry and joint groups"""
         for grp in [geo, jnt]:
             if grp and cmds.objExists(grp):
                 # Lock the group itself
@@ -157,6 +139,7 @@ class RiggingToolkit:
                     self.lock_and_hide(child)
 
     def lock_and_hide(self, node: str):
+        """Locks and disables keying translate, rotate, and scale attributes on a node"""
         cmds.setAttr(node + '.tx', l=1, k=0)
         cmds.setAttr(node + '.ty', l=1, k=0)
         cmds.setAttr(node + '.tz', l=1, k=0)
@@ -166,3 +149,28 @@ class RiggingToolkit:
         cmds.setAttr(node + '.sx', l=1, k=0)
         cmds.setAttr(node + '.sy', l=1, k=0)
         cmds.setAttr(node + '.sz', l=1, k=0)
+
+    def setup_display_layers(self):
+        """Creates Display Layers for geometry, controls, and joints."""
+
+        # Geometry Layer (Reference mode so geo cannot be selected in viewport)
+        if cmds.objExists(NAMING["geo_layer"]):
+            cmds.delete(NAMING["geo_layer"])
+        geo_layer = cmds.createDisplayLayer(name=NAMING["geo_layer"], number=1, empty=True)
+        cmds.editDisplayLayerMembers(geo_layer, self.geo_grp)
+        cmds.setAttr(f"{geo_layer}.displayType", 2)
+
+        # Controls Layer (Visible)
+        if cmds.objExists(NAMING["ctrl_layer"]):
+            cmds.delete(NAMING["ctrl_layer"])
+        ctrl_layer = cmds.createDisplayLayer(name=NAMING["ctrl_layer"], number=1, empty=True)
+        cmds.editDisplayLayerMembers(ctrl_layer, self.ctrl_grp)
+
+        # Joints Layer (Hidden by default, set to Reference mode)
+        jnt_layer_name = NAMING.get("jnt_layer", "JNT_layer")
+        if cmds.objExists(jnt_layer_name):
+            cmds.delete(jnt_layer_name)
+        jnt_layer = cmds.createDisplayLayer(name=jnt_layer_name, number=1, empty=True)
+        cmds.editDisplayLayerMembers(jnt_layer, self.jnt_grp)
+        cmds.setAttr(f"{jnt_layer}.displayType", 2)
+        cmds.setAttr(f"{jnt_layer}.visibility", 0)
