@@ -1,150 +1,140 @@
 ﻿import adentk.maya.prop_rig_toolkit.controls as controls
 import adentk.maya.prop_rig_toolkit.rigging as rigging
+import maya.OpenMayaUI as omui
+from PySide6 import QtWidgets, QtGui, QtCore
+from shiboken6 import wrapInstance
+import os
+import logging
+
+# Shim: PyMEL calls logging._acquireLock, which Python 3.13 removed. Must run before importing pymel.
+if not hasattr(logging, '_acquireLock'):
+    logging._acquireLock = lambda: logging._lock.acquire()
+    logging._releaseLock = lambda: logging._lock.release()
 import maya.cmds as cmds
 
-class PropRigUI:
+DEV_ROOT = r"D:\_dev\adentk"
+ICONS_DIR = os.path.join(DEV_ROOT, "maya", "icons")
 
-    def __init__(self):
-        self.window = None
-        self.main_layout = None
-        self.main_grp_field = None
-        self.geo_suffix_field = None
-        self.jnt_suffix_field = None
-        self.ctrl_suffix_field = None
-        self.offset_suffix_field = None
-        self.root_jnt_field = None
-        self.make_root_jnt_checkbox = None
-        self.ctrl_size_slider = None
-        self.ctrl_shape_menu = None
-        self.ctrl_color_slider = None
 
-    def show(self):
-        if cmds.window(self.window, exists=True):
-            cmds.deleteUI(self.window)
+def get_maya_main_window():
+    pointer = omui.MQtUtil.mainWindow()
+    return wrapInstance(int(pointer), QtWidgets.QWidget)
 
-        self.build_ui()
-        cmds.showWindow(self.window)
 
-    def build_ui(self):
-        if cmds.window("AutomaticPropRigger", exists=True):
-            cmds.deleteUI("AutomaticPropRigger")
+class PropRiggingUI(QtWidgets.QDialog):
+    WINDOW_TITLE = "Automatic Prop Rigger"
+    OBJECT_NAME = "AutomaticPropRigger"
 
-        self.window = cmds.window("AutomaticPropRigger", title="Automatic Prop Rigger", menuBar=True, widthHeight=(350, 420))
+    def __init__(self, parent=None):
+        if parent is None:
+            parent = get_maya_main_window()
+        super().__init__(parent)
 
-        # --- Help & Documentation ----
-        cmds.menu(label='Help', tearOff=False)
-        cmds.menuItem(label='Documentation')
-        cmds.menu(label='Preferences', tearOff=False)
-        cmds.menuItem(label='Save')
-        cmds.menuItem(label='Load')
+        self.setStyleSheet("""
+            QPushButton {
+                border: 1px solid #3c3c3c;
+                border-radius: 4px;
+                background-color: #2b2b2b;
+                padding: 4px;
+            }
+            QPushButton:hover {
+                background-color: #3b3b3b;
+                border-color: #555555;
+            }
+        """)
 
-        # --- Main Outer Layout ----
-        self.main_layout = cmds.columnLayout(adjustableColumn=True)
+        self.ControlUtils = controls.BSControlsUtils()
 
-        # --- Control Options ----
-        cmds.text(label='Control Options', font='boldLabelFont', align='center')
-        cmds.separator(height=5, style='none')
+        self.setObjectName(self.OBJECT_NAME)
+        self.setWindowTitle(self.WINDOW_TITLE)
+        self.resize(400, 600)
+        self.box_layout = QtWidgets.QVBoxLayout(self)
+        self.cv_shapes_grid = QtWidgets.QGridLayout()
+        self.box_layout.addLayout(self.cv_shapes_grid)
 
-        self.ctrl_size_slider = cmds.floatSliderGrp(
-            label='Control Size',
-            field=True,
-            minValue=0.1,
-            maxValue=100,
-            value=1.0,
-            step=1,
-            columnWidth=[(1, 90), (2, 50), (3, 150)]
-        )
+        buttons_data = [
+            ("btn_circle", "Circle", "circle.png"),
+            ("btn_square", "Square", "square.png"),
+            ("btn_triangle", "Triangle", "triangle.png"),
+            ("btn_sphere", "Sphere", "sphere.png"),
+            ("btn_cube", "Cube", "Box.png"),
+            ("btn_pyramid", "Pyramid", "pyramid.png"),
+            ("btn_diamond", "Diamond", "diamond.png"),
+            ("btn_circle_pin", "Circle Pin", "circle_pin.png"),
+            ("btn_circle_dumbbell", "Circle Dumbbell", "circle_dumbbell.png"),
+            ("btn_four_arrows", "Four Arrows", "four_arrows.png"),
+            ("btn_curved_four_arrows", "Curved Four Arrows", "curved_four_arrows.png"),
+            ("btn_two_arrows", "Two Arrows", "two_arrows.png"),
+            ("btn_curved_two_arrows", "Curved Two Arrows", "curved_two_arrows.png"),
+            ("btn_circle_one_arrow", "Circle One Arrow", "circle_one_arrow.png"),
+            ("btn_circle_two_arrows", "Circle Two Arrows", "circle_two_arrows.png"),
+            ("btn_circle_four_arrows", "Circle Four Arrows", "circle_four_arrows.png"),
+            ("btn_gear", "Gear", "gear.png"),
+        ]
 
-        self.ctrl_color_slider = cmds.colorSliderGrp(
-            label='Control Color',
-            hsv=(120, 1, 1),
-            columnWidth=[(1, 90), (2, 50), (3, 150)]
-        )
+        columns = 4
+        for i, (attr_name, label, icon_filename) in enumerate(buttons_data):
+            btn = QtWidgets.QPushButton()
+            btn.setToolTip(label)
+            btn.setIconSize(QtCore.QSize(64, 64))
+            btn.setMaximumSize(70, 70)
+            # Resolve full absolute path to icon
+            icon_path = os.path.join(ICONS_DIR, icon_filename)
+            btn.setIcon(QtGui.QIcon(icon_path))
 
-        cmds.separator(height=15, style='single')
-        cmds.text(label='Control Shapes', font='boldLabelFont', align='center')
-        cmds.separator(height=5, style='none')
+            btn.clicked.connect(
+                lambda checked=False, s=label, b=btn: self.on_select_shape(
+                    shape=s, clicked_btn=b
+                )
+            )
+            setattr(self, attr_name, btn)
 
-        self.ctrl_shape_menu = cmds.rowColumnLayout(
-            numberOfColumns=3,
-            columnAttach=[(1, 'both', 2), (2, 'both', 2), (3, 'both', 2)],
-            columnWidth=[(1, 110), (2, 110), (3, 110)],
-            rowSpacing=[(1, 4), (2, 4), (3, 4)]
-        )
+            row = i // columns
+            col = i % columns
+            self.cv_shapes_grid.addWidget(btn, row, col)
 
-        cmds.button(label='Box')
-        cmds.button(label='Circle')
-        cmds.button(label='Sphere')
-        cmds.button(label='Cross')
-        cmds.button(label='Square')
-        cmds.button(label='Pointer')
-        cmds.button(label='Custom')
+        self.selected_shape = "Circle"
+        self.selected_shape_btn = self.btn_circle
+        self.selected_shape_btn.setStyleSheet("background-color: green")
 
-        cmds.setParent(self.main_layout)
-        cmds.separator(height=25, style='single')
+    def on_select_shape(self, shape: str, clicked_btn: QtWidgets.QPushButton):
+        # toggle active/inactive button colors
+        self.selected_shape_btn.setStyleSheet("background-color: none")
+        clicked_btn.setStyleSheet("background-color: green")
 
-        # --- Rig Options ----
-        cmds.text(label='Rig Options', font='boldLabelFont', align='center')
-        cmds.separator(height=5, style='none')
+        self.selected_shape_btn = clicked_btn
+        self.selected_shape = shape
 
-        cmds.rowColumnLayout(
-            numberOfColumns=3,
-            columnAttach=[(1, 'both', 2), (2, 'both', 2), (3, 'both', 2)],
-            columnWidth=[(1, 110), (2, 110), (3, 110)],
-            rowSpacing=[(1, 4)]
-        )
+        selection = cmds.ls(sl=True, l=True)
 
-        self.make_root_jnt_checkbox = cmds.checkBox(label='Make Root Joint')
-        cmds.text(label='')
-        cmds.text(label='')
+        self.ControlUtils.bsDrawCurve(curve=shape, thickness=1.0)
 
-        cmds.button(label='Full Rig')
-        cmds.button(label='Joints Only')
-        cmds.button(label='Controls Only')
-        cmds.setParent(self.main_layout)  # Exit back to main layout
+        if selection:
+            for objs in selection:
+                # Getting and checking node type to act on shape level
+                nType = cmds.nodeType(objs)
 
-        cmds.separator(height=15, style='none')
+                if nType == 'transform':
+                    objs = cmds.listRelatives(objs, s=True)
+                elif nType == 'shape':
+                    pass
+                else:
+                    cmds.error('Selected object(s) is not a nurbs curve.')
 
-        # --- Naming Settings ---
-        cmds.frameLayout(label='Naming Conventions', collapsable=True, marginWidth=5, marginHeight=5)
-        cmds.rowColumnLayout(
-            numberOfColumns=2,
-            columnAttach=[(1, 'right', 5), (2, 'both', 0)],
-            columnWidth=[(1, 120), (2, 1)],
-            adj=2
-        )
+                print(objs)
 
-        cmds.text(label='Main Group Name')
-        self.main_grp_field = cmds.textField()
 
-        cmds.text(label='Root Joint Name')
-        self.root_jnt_field = cmds.textField()
+def show_ui():
+    maya_window = get_maya_main_window()
+    existing_window = maya_window.findChild(QtWidgets.QDialog, PropRiggingUI.OBJECT_NAME)
+    if existing_window:
+        existing_window.close()
+        existing_window.deleteLater()
 
-        cmds.text(label='Geometry Suffix')
-        self.geo_suffix_field = cmds.textField()
+    qt_window = PropRiggingUI()
+    qt_window.show()
 
-        cmds.text(label='Joint Suffix')
-        self.jnt_suffix_field = cmds.textField()
+    return qt_window
 
-        cmds.text(label='Offset Suffix')
-        self.offset_suffix_field = cmds.textField()
 
-        cmds.text(label='Control Suffix')
-        self.ctrl_suffix_field = cmds.textField()
-
-        cmds.setParent(self.main_layout)  # Return to main layout
-
-    def on_build_rig(self, *args):
-        naming_input = rigging.NamingConventions(
-            main_grp = cmds.textField(self.main_grp_field, query=True, text=True),
-            geo_suffix = cmds.textField(self.geo_suffix_field, query=True, text=True),
-            jnt_suffix = cmds.textField(self.jnt_suffix_field, query=True, text=True),
-            ctrl_suffix = cmds.textField(self.ctrl_suffix_field, query=True, text=True),
-            offset_suffix = cmds.textField(self.offset_suffix_field, query=True, text=True),
-            root_jnt = cmds.textField(self.root_jnt_field, query=True, text=True)
-        )
-
-        make_root = cmds.checkBox(self.make_root_jnt_checkbox, query=True, value=True)
-        selection = cmds.ls(selection=True)
-        rigging.createJoints(naming_input, selection, make_root)
-
+show_ui()
