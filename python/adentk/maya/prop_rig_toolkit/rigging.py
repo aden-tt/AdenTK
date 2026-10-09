@@ -33,7 +33,7 @@ class RiggingToolkit:
         self.joints_list = []
         self.control_list = []
 
-    def build_rig(self, shape: str, mode: str = "FullRig", makeRoot: bool = True):
+    def build_rig(self, color, scale, shape: str, mode: str = "FullRig", makeRoot: bool = True):
         """Executes the full rigging pipeline for selected mesh objects"""
         self.objects_list = cmds.ls(sl=True) or []
         self.mesh_xform_list =[
@@ -64,12 +64,18 @@ class RiggingToolkit:
         self.mesh_xform_list = processed_geo_list
 
         self.create_joints()
+
+        if mode == "ControlsOnly":
+            pass
+
         if not mode == "JointsOnly":
             self.create_controls(shape, self.joints_list)
+            # Lock and hide geo and joints
+            self.lock_and_hide_grp(self.geo_grp, self.jnt_grp)
+            self.setup_display_layers()
+            cmds.select(self.control_list, replace=True)
+            self.utils.bsSetIndex(color)
 
-        # Lock and hide geo and joints
-        self.lock_and_hide_grp(self.geo_grp, self.jnt_grp)
-        self.setup_display_layers()
 
 
     def create_joints(self, makeRoot: bool = True):
@@ -130,6 +136,10 @@ class RiggingToolkit:
             cmds.parentConstraint(ctrl, jnt, mo=True)
             self.control_list.append(ctrl)
 
+
+
+
+
     def replaceControls(self, shape, selection):
         # Draw temporary reference curve
         temp_curve = self.utils.bsDrawCurve(curve=shape)
@@ -189,7 +199,7 @@ class RiggingToolkit:
         if cmds.objExists(NAMING["ctrl_layer"]):
             cmds.delete(NAMING["ctrl_layer"])
         ctrl_layer = cmds.createDisplayLayer(name=NAMING["ctrl_layer"], number=1, empty=True)
-        cmds.editDisplayLayerMembers(ctrl_layer, self.ctrl_grp)
+        cmds.editDisplayLayerMembers(ctrl_layer, self.ctrl_grp, noRecurse=True)
 
         # Joints Layer (Hidden by default, set to Reference mode)
         jnt_layer_name = NAMING.get("jnt_layer", "JNT_layer")

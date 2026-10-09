@@ -15,9 +15,57 @@ copies or substantial portions of the Software.
 """
 
 import maya.cmds as cmds
+import colorsys
+
+def apply_color_to_selected(hue, nodes=None, *args):
+    r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
+
+    sel = nodes or cmds.ls(sl=True, l=True) or []
+    if not sel:
+        cmds.warning('Nothing selected')
+        return
+
+    for obj in sel:
+        shapes = cmds.listRelatives(obj, shapes=True, fullPath=True) or []
+        for node in [obj] + shapes:
+            if not cmds.attributeQuery('overrideEnabled', node=node, exists=True):
+                continue
+            cmds.setAttr(f'{node}.overrideEnabled', 1)
+            cmds.setAttr(f'{node}.overrideRGBColors', 1)
+            cmds.setAttr(f'{node}.overrideColorRGB', r, g, b)
+
+def apply_thickness_to_selected(sel, thickness):
+    if not thickness > 1.0:
+        return
+    for s in sel:
+        crvShape = cmds.listRelatives(s, s=True)
+        for c in crvShape:
+            cmds.setAttr('%s.lineWidth' % c, thickness)
 
 
+def apply_scale_to_selected(ctrls, scale):
+    for ctrl in ctrls:
+        shapes = cmds.listRelatives(ctrl, shapes=True, type="nurbsCurve", fullPath=True) or []
+        if not shapes:
+            continue
 
+        cvs = [f"{s}.cv[*]" for s in shapes]
+        pivot = cmds.xform(ctrl, query=True, worldSpace=True, rotatePivot=True)
+
+        if scale != (1, 1, 1):
+            cmds.scale(*scale, cvs, relative=True, objectSpace=True, pivot=pivot)
+
+def apply_rotation_to_selected(ctrls, rotate=(0,0,0)):
+    for ctrl in ctrls:
+        shapes = cmds.listRelatives(ctrl, shapes=True, type="nurbsCurve", fullPath=True) or []
+        if not shapes:
+            continue
+
+        cvs = [f"{s}.cv[*]" for s in shapes]
+        pivot = cmds.xform(ctrl, query=True, worldSpace=True, rotatePivot=True)
+
+        if any(rotate):
+            cmds.rotate(*rotate, cvs, relative=True, objectSpace=True, pivot=pivot)
 
 class BSControlsUtils:
 
@@ -47,60 +95,6 @@ class BSControlsUtils:
 
         return crv
 
-    # Function to place the controls in proper hierarchies based on user input.
-    def bsPlaceControls(self, button, curve, name, thickness):
-        sel = cmds.ls(sl=True)
-
-        # Parent Button
-        if button == 'parent':
-            if len(sel) < 1:
-                cmds.error('Select at least 1 object.')
-
-            for obj in sel:
-                crv = self.bsCurvePosition(obj, curve[0], thickness, name)
-
-                objParent = cmds.listRelatives(obj, p=True, typ='transform')
-
-                if objParent != None:
-                    cmds.parent(crv, objParent)
-
-                cmds.parent(obj, crv)
-
-        # Child Button
-        elif button == 'child':
-            if len(sel) < 1:
-                cmds.error('Select at least 1 object.')
-
-            for obj in sel:
-                crv = self.bsCurvePosition(obj, curve[0], thickness, name)
-
-                objChild = cmds.listRelatives(obj, c=True, typ='transform')
-
-                if objChild != None:
-                    cmds.parent(objChild, crv)
-
-                cmds.parent(crv, obj)
-
-        # World Button
-        elif button == 'world':
-            if len(sel) < 1:
-                cmds.error('Select at least 1 object.')
-
-            for obj in sel:
-                crv = self.bsCurvePosition(obj, curve[0], thickness, name)
-
-        # Origin Button
-        elif button == 'origin':
-            crv = self.bsDrawCurve(curve[0], thickness)
-
-            if name == '':
-                name = curve[0].lower()
-                name = name.replace(' ', '_')
-                cmds.rename(crv, name)
-            else:
-                name = name.replace(' ', '_')
-                cmds.rename(crv, name)
-
     # Function to set the color of the selected shapes.
     def bsSetIndex(self, color):
         sel = cmds.ls(sl=True, l=True)
@@ -127,8 +121,6 @@ class BSControlsUtils:
                     cmds.setAttr('%s.overrideDisplayType' % (obj), 0)
 
                 cmds.setAttr('%s.overrideColor' % (obj), color)
-
-        cmds.select(d=True)
 
     # Function to reset the color of selected shapes.
     def bsResetColor(self, *args):
