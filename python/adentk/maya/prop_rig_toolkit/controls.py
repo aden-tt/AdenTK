@@ -16,8 +16,9 @@ copies or substantial portions of the Software.
 
 import maya.cmds as cmds
 import colorsys
+from dataclasses import dataclass
 
-def apply_color_to_selected(hue, nodes=None, *args):
+def OLD_apply_color(hue, nodes=None):
     r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
 
     sel = nodes or cmds.ls(sl=True, l=True) or []
@@ -34,7 +35,36 @@ def apply_color_to_selected(hue, nodes=None, *args):
             cmds.setAttr(f'{node}.overrideRGBColors', 1)
             cmds.setAttr(f'{node}.overrideColorRGB', r, g, b)
 
-def apply_thickness_to_selected(sel, thickness):
+
+# Function to set the color of the selected shapes.
+def apply_color(sel, color):
+    sel = sel or cmds.ls(sl=True, l=True)
+
+    for objs in sel:
+        # Getting and checking node type to act on shape level
+        nType = cmds.nodeType(objs)
+
+        if nType == 'transform':
+            objs = cmds.listRelatives(objs, s=True)
+        elif nType == 'shape':
+            pass
+        else:
+            cmds.error('Selected object(s) is not a nurbs curve.')
+
+        # Changing drawing override color on multiple shapes.
+        for obj in objs:
+            override = cmds.getAttr('%s.overrideEnabled' % obj)
+            if override == 0:
+                cmds.setAttr('%s.overrideEnabled' % obj, 1)
+
+            display = cmds.getAttr('%s.overrideDisplayType' % obj)
+            if display != 0:
+                cmds.setAttr('%s.overrideDisplayType' % obj, 0)
+
+            cmds.setAttr('%s.overrideColor' % obj, color)
+
+
+def apply_thickness(sel, thickness):
     if not thickness > 1.0:
         return
     for s in sel:
@@ -42,8 +72,8 @@ def apply_thickness_to_selected(sel, thickness):
         for c in crvShape:
             cmds.setAttr('%s.lineWidth' % c, thickness)
 
-
-def apply_scale_to_selected(ctrls, scale):
+# TODO debug
+def apply_scale(ctrls, scale):
     for ctrl in ctrls:
         shapes = cmds.listRelatives(ctrl, shapes=True, type="nurbsCurve", fullPath=True) or []
         if not shapes:
@@ -55,7 +85,8 @@ def apply_scale_to_selected(ctrls, scale):
         if scale != (1, 1, 1):
             cmds.scale(*scale, cvs, relative=True, objectSpace=True, pivot=pivot)
 
-def apply_rotation_to_selected(ctrls, rotate=(0,0,0)):
+# TODO debug
+def apply_rotation(ctrls, rotate=(0,0,0)):
     for ctrl in ctrls:
         shapes = cmds.listRelatives(ctrl, shapes=True, type="nurbsCurve", fullPath=True) or []
         if not shapes:
@@ -67,173 +98,96 @@ def apply_rotation_to_selected(ctrls, rotate=(0,0,0)):
         if any(rotate):
             cmds.rotate(*rotate, cvs, relative=True, objectSpace=True, pivot=pivot)
 
-class BSControlsUtils:
 
-    # Function to draw nurbs curves from dictionary data and user input.
-    def bsDrawCurve(self, curve, thickness=1.0):
-        # Exception for Circle shape.
-        if curve == 'Circle':
-            crv = cmds.circle(d=3, r=2, nr=[0, 1, 0], ch=False)
-        else:
-            crv = cmds.curve(d=1, p=BSControlsData.cvTuples[curve])
+# Function to draw nurbs curves from dictionary data and user input.
+def draw_curve(curve, thickness=1.0, size=1.0):
+    # Exception for Circle shape.
+    if curve == 'Circle':
+        crv = cmds.circle(d=3, r=2, nr=[0, 1, 0], ch=False)
+    else:
+        crv = cmds.curve(d=1, p=ControlShapes.cvTuples[curve])
 
-        # Exception for adding an additional shape node to the Gear curve.
-        if curve == 'Gear':
-            circle = cmds.circle(r=0.9, nr=[0, 1, 0])
-            circleShape = cmds.listRelatives(circle, s=True)
-            circleShape = cmds.rename(circleShape, crv + 'CircleShape')
-            cmds.parent(circleShape, crv, add=True, s=True)
-            cmds.delete(circle)
+    # Exception for adding an additional shape node to the Gear curve.
+    if curve == 'Gear':
+        circle = cmds.circle(r=0.9, nr=[0, 1, 0])
+        circleShape = cmds.listRelatives(circle, s=True)
+        circleShape = cmds.rename(circleShape, crv + 'CircleShape')
+        cmds.parent(circleShape, crv, add=True, s=True)
+        cmds.delete(circle)
 
-        # Only adjusting the lineWidth attribute only if a value greater than 1.0 is input.
-        if thickness > 1.0:
-            crvShape = cmds.listRelatives(crv, s=True)
-            for c in crvShape:
-                cmds.setAttr('%s.lineWidth' % (c), thickness)
-        else:
+    # Only adjusting the lineWidth attribute only if a value greater than 1.0 is input.
+    if thickness > 1.0:
+        crvShape = cmds.listRelatives(crv, s=True)
+        for c in crvShape:
+            cmds.setAttr('%s.lineWidth' % c, thickness)
+    else:
+        pass
+
+    # TODO scale by size
+
+    return crv
+
+
+# Function to replace shape(s) with a loaded replacement(s).
+def replace_shape(target, replacement, mirror):
+    # Duplicating the replacement shape source.
+    duplicate = cmds.duplicate(replacement, rr=True, rc=True, n='temp_CRV')
+
+    # Unlocking attributes for parent constraint and freeze transforms.
+    cmds.setAttr(duplicate[0] + '.tx', l=0, k=1)
+    cmds.setAttr(duplicate[0] + '.ty', l=0, k=1)
+    cmds.setAttr(duplicate[0] + '.tz', l=0, k=1)
+    cmds.setAttr(duplicate[0] + '.rx', l=0, k=1)
+    cmds.setAttr(duplicate[0] + '.ry', l=0, k=1)
+    cmds.setAttr(duplicate[0] + '.rz', l=0, k=1)
+    cmds.setAttr(duplicate[0] + '.sx', l=0, k=1)
+    cmds.setAttr(duplicate[0] + '.sy', l=0, k=1)
+    cmds.setAttr(duplicate[0] + '.sz', l=0, k=1)
+
+    # Parenting duplicate to world and deleting the children
+    duplicatePar = cmds.listRelatives(duplicate, p=True)
+    if duplicatePar != None:
+        duplicate = cmds.parent(duplicate, w=True)
+
+    children = cmds.listRelatives(duplicate, c=True, f=True)
+    for child in children:
+        c = child.lower()
+        if 'shape' in c:
             pass
-
-        return crv
-
-    # Function to set the color of the selected shapes.
-    def bsSetIndex(self, color):
-        sel = cmds.ls(sl=True, l=True)
-
-        for objs in sel:
-            # Getting and checking node type to act on shape level
-            nType = cmds.nodeType(objs)
-
-            if nType == 'transform':
-                objs = cmds.listRelatives(objs, s=True)
-            elif nType == 'shape':
-                pass
-            else:
-                cmds.error('Selected object(s) is not a nurbs curve.')
-
-            # Changing drawing override color on multiple shapes.
-            for obj in objs:
-                override = cmds.getAttr('%s.overrideEnabled' % (obj))
-                if override == 0:
-                    cmds.setAttr('%s.overrideEnabled' % (obj), 1)
-
-                display = cmds.getAttr('%s.overrideDisplayType' % (obj))
-                if display != 0:
-                    cmds.setAttr('%s.overrideDisplayType' % (obj), 0)
-
-                cmds.setAttr('%s.overrideColor' % (obj), color)
-
-    # Function to reset the color of selected shapes.
-    def bsResetColor(self, *args):
-        sel = cmds.ls(sl=True, l=True)
-
-        for objs in sel:
-            # Resetting drawing overrides on transform level.
-            override = cmds.getAttr('%s.overrideEnabled' % (objs))
-            if override == 1:
-                cmds.setAttr('%s.overrideEnabled' % (objs), 0)
-
-            cmds.setAttr('%s.overrideColor' % (objs), 0)
-            cmds.setAttr('%s.overrideDisplayType' % (objs), 0)
-
-            # Getting and checking node type to act on shape level.
-            nType = cmds.nodeType(objs)
-
-            if nType == 'transform':
-                shapes = cmds.listRelatives(objs, s=True)
-            elif nType == 'shape':
-                pass
-            else:
-                cmds.error('Selected object(s) is not a nurbs curve.')
-
-            # Resetting drawing overrides on multiple shapes.
-            for s in shapes:
-                overrideShape = cmds.getAttr('%s.overrideEnabled' % (s))
-                if overrideShape == 1:
-                    cmds.setAttr('%s.overrideEnabled' % (s), 0)
-                cmds.setAttr('%s.overrideColor' % (s), 0)
-                cmds.setAttr('%s.overrideDisplayType' % (s), 0)
-
-        cmds.select(d=True)
-
-    # Function to load shapes into text fields with a button press and return the selection.
-    def bsLoadShapes(self, textField):
-        sel = cmds.ls(sl=True, l=True)
-
-        niceSel = [s.split('|')[-1] for s in sel]
-
-        text = ', '.join(niceSel)
-        length = len(niceSel)
-
-        # If more than one object is selected the text box will display how many shapes are loaded instead of names.
-        if length > 1:
-            cmds.textField(textField, e=True, tx='%d shapes loaded.' % (length))
         else:
-            cmds.textField(textField, e=True, tx=text)
+            cmds.delete(child)
 
-        return sel
+    # Matching the position of the target
+    if mirror == True:
+        grp = cmds.group(em=True, w=True, n='mirror_GRP')
+        cmds.parent(duplicate, grp)
+        cmds.setAttr('%s.scaleX' % (grp), -1.0)
+        cmds.parent(duplicate, w=True)
+        cmds.delete(grp)
+    else:
+        const = cmds.parentConstraint(target, duplicate)
+        cmds.delete(const)
 
+    # Parenting the duplicate to target shape's parent.
+    cmds.parent(duplicate, target)
+    cmds.makeIdentity(duplicate, apply=True, t=1, r=1, s=1)
 
+    # Getting the shape nodes and deleting the target's current shape
+    duplicateShape = cmds.listRelatives(duplicate, s=True)
+    targetShape = cmds.listRelatives(target, s=True)
+    targetNice = target.split('|')[-1] + 'Shape'
+    cmds.delete(targetShape)
 
-    # Function to replace shape(s) with a loaded replacement(s).
-    def bsReplaceShape(self, target, replacement, mirror):
-        # Duplicating the replacement shape source.
-        duplicate = cmds.duplicate(replacement, rr=True, rc=True, n='temp_CRV')
+    # Parenting the duplicate shapes to target transform and renaming.
+    for shape in duplicateShape:
+        shape = cmds.rename(shape, targetNice)
+        cmds.parent(shape, target, add=True, s=True)
 
-        # Unlocking attributes for parent constraint and freeze transforms.
-        cmds.setAttr(duplicate[0] + '.tx', l=0, k=1)
-        cmds.setAttr(duplicate[0] + '.ty', l=0, k=1)
-        cmds.setAttr(duplicate[0] + '.tz', l=0, k=1)
-        cmds.setAttr(duplicate[0] + '.rx', l=0, k=1)
-        cmds.setAttr(duplicate[0] + '.ry', l=0, k=1)
-        cmds.setAttr(duplicate[0] + '.rz', l=0, k=1)
-        cmds.setAttr(duplicate[0] + '.sx', l=0, k=1)
-        cmds.setAttr(duplicate[0] + '.sy', l=0, k=1)
-        cmds.setAttr(duplicate[0] + '.sz', l=0, k=1)
+    # Deleting duplicate.
+    cmds.delete(duplicate)
 
-        # Parenting duplicate to world and deleting the children
-        duplicatePar = cmds.listRelatives(duplicate, p=True)
-        if duplicatePar != None:
-            duplicate = cmds.parent(duplicate, w=True)
-
-        children = cmds.listRelatives(duplicate, c=True, f=True)
-        for child in children:
-            c = child.lower()
-            if 'shape' in c:
-                pass
-            else:
-                cmds.delete(child)
-
-        # Matching the position of the target
-        if mirror == True:
-            grp = cmds.group(em=True, w=True, n='mirror_GRP')
-            cmds.parent(duplicate, grp)
-            cmds.setAttr('%s.scaleX' % (grp), -1.0)
-            cmds.parent(duplicate, w=True)
-            cmds.delete(grp)
-        else:
-            const = cmds.parentConstraint(target, duplicate)
-            cmds.delete(const)
-
-        # Parenting the duplicate to target shape's parent.
-        cmds.parent(duplicate, target)
-        cmds.makeIdentity(duplicate, apply=True, t=1, r=1, s=1)
-
-        # Getting the shape nodes and deleting the target's current shape
-        duplicateShape = cmds.listRelatives(duplicate, s=True)
-        targetShape = cmds.listRelatives(target, s=True)
-        targetNice = target.split('|')[-1] + 'Shape'
-        cmds.delete(targetShape)
-
-        # Parenting the duplicate shapes to target transform and renaming.
-        for shape in duplicateShape:
-            shape = cmds.rename(shape, targetNice)
-            cmds.parent(shape, target, add=True, s=True)
-
-        # Deleting duplicate.
-        cmds.delete(duplicate)
-
-
-class BSControlsData():
+@dataclass
+class ControlShapes:
     # List of all control curve names.
     controlNames = ['Circle', 'Half Circle', 'Square', 'Triangle', 'Sphere', 'Half Sphere', 'Box', 'Pyramid', 'Diamond',
                     'Circle Pin', 'Square Pin',
@@ -271,7 +225,6 @@ class BSControlsData():
         (0.3901806440322567, 1.2011155542966538e-16, -1.9615705608064582),
         (7.330873434585712e-16, 1.2246467991473515e-16, -1.9999999999999973)
     ]
-
     cvTuples['Square'] = [
         (-2.001501540839854, 0.0, -2.001501540839854),
         (-2.001501540839854, 0.0, 2.001501540839854),

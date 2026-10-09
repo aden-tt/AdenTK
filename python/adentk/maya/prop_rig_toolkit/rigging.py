@@ -1,211 +1,233 @@
 import maya.cmds as cmds
 import adentk.maya.prop_rig_toolkit.controls as controls
-
-from typing import List
-
-NAMING = {
-    "main_grp": "main_grp",
-    "jnt_grp":  "jnt_grp",
-    "ctrl_grp": "ctrl_grp",
-    "geo_grp": "geo_grp",
-    "geo_sfx":  "_geo",
-    "jnt_sfx":  "_jnt",
-    "ctrl_sfx": "_ctrl",
-    "off_sfx":  "_offset",
-    "root_jnt": "root_jnt",
-    "geo_layer": "GEO_layer",
-    "ctrl_layer": "CTRL_layer"
-}
+from dataclasses import dataclass, field
+from typing import List, Tuple, Any
 
 
-class RiggingToolkit:
-    def __init__(self):
-        self.utils = controls.BSControlsUtils()
-        self.main_grp = None
-        self.ctrl_grp = None
-        self.jnt_grp = None
-        self.geo_grp = None
-        self.root_jnt = None
+@dataclass(frozen=True)
+class NamingConfig:
+    main_grp: str = "main_grp"
+    jnt_grp: str = "jnt_grp"
+    ctrl_grp: str = "ctrl_grp"
+    geo_grp: str = "geo_grp"
+    geo_sfx: str = "_geo"
+    jnt_sfx: str = "_jnt"
+    ctrl_sfx: str = "_ctrl"
+    off_sfx: str = "_offset"
+    root_jnt: str = "root_jnt"
+    jnt_layer: str = "JNT_layer"
+    geo_layer: str = "GEO_layer"
+    ctrl_layer: str = "CTRL_layer"
 
-        self.objects_list = []
-        self.mesh_xform_list = []
-        self.offset_control_list = []
-        self.joints_list = []
-        self.control_list = []
+NAMING = NamingConfig()
 
-    def build_rig(self, color, scale, shape: str, mode: str = "FullRig", makeRoot: bool = True):
-        """Executes the full rigging pipeline for selected mesh objects"""
-        self.objects_list = cmds.ls(sl=True) or []
-        self.mesh_xform_list =[
-            obj for obj in self.objects_list
-            if cmds.listRelatives(obj, type="mesh", path=True) is not None
-        ]
+@dataclass
+class RigConfig:
+    make_root: bool = True
+    create_display_layers: bool = True
+    build_mode: str = "FullRig" # Options: "FullRig", "ControlsOnly", "JointsOnly"
+    ctrl_shape: str = "Circle"
+    ctrl_size: float = 1.0
+    ctrl_thickness: float = 1.0
+    ctrl_color: int = 1
 
-        # Create Main Group and sub-groups
-        self.main_grp = cmds.group( n=NAMING["main_grp"], em=True )
-        self.geo_grp = cmds.group( n=NAMING["geo_grp"], em=True )
-        self.jnt_grp = cmds.group( n=NAMING["jnt_grp"], em=True )
-        self.ctrl_grp = cmds.group( n=NAMING["ctrl_grp"], em=True )
-
-        cmds.parent([self.geo_grp, self.jnt_grp, self.ctrl_grp], self.main_grp)
-
-        # Process and rename meshes, then parent under geo_grp
-        processed_geo_list = []
-        for obj in self.mesh_xform_list:
-            geo_name = obj
-            # Add suffix if it doesn't already end with geo_sfx
-            if not obj.endswith(NAMING["geo_sfx"]):
-                geo_name = cmds.rename(obj, obj + NAMING["geo_sfx"])
-
-            # Parent under geo_grp
-            cmds.parent(geo_name, self.geo_grp)
-            processed_geo_list.append(geo_name)
-
-        self.mesh_xform_list = processed_geo_list
-
-        self.create_joints()
-
-        if mode == "ControlsOnly":
-            pass
-
-        if not mode == "JointsOnly":
-            self.create_controls(shape, self.joints_list)
-            # Lock and hide geo and joints
-            self.lock_and_hide_grp(self.geo_grp, self.jnt_grp)
-            self.setup_display_layers()
-            cmds.select(self.control_list, replace=True)
-            self.utils.bsSetIndex(color)
+@dataclass
+class Rig:
+    """Container holding created scene nodes for a built rig"""
+    main_grp: str = None
+    ctrl_grp: str = None
+    jnt_grp: str = None
+    geo_grp: str = None
+    root_jnt: str = None
+    objects_list: List[str] = field(default_factory=list)
+    mesh_xform_list: List[str] = field(default_factory=list)
+    offset_control_list: List[str] = field(default_factory=list)
+    joints_list: List[str] = field(default_factory=list)
+    ctrl_list: List[str] = field(default_factory=list)
 
 
 
-    def create_joints(self, makeRoot: bool = True):
-        """Creates joints at mesh pivots and binds them to skin"""
-        self.joints_list = []
-        root_joint = None
+# TODO when replace shape, transfer thickness and color options
+def replace_controls(new_shape, selection) -> None:
+    """Replaces the shape of selected controls with a new curve shape"""
+    temp_curve = controls.draw_curve(curve=new_shape)
 
-        if makeRoot:
-            cmds.select(clear=True)
-            root_joint = cmds.joint(n=NAMING["root_jnt"], sc=False)
-            cmds.parent(root_joint, self.jnt_grp)
-            self.root_jnt = root_joint
+    for sel in selection:
+        old_thickness = None
+        old_color = None
 
-        for obj in self.mesh_xform_list:
-            cmds.select(clear=True)
+        if cmds.attributeQuery("lineWidth", node=sel, exists=True):
+            old_thickness = cmds.getAttr(f"{sel}.lineWidth")
+        if cmds.attributeQuery("overrideColor", node=sel, exists=True):
+            old_color = cmds.getAttr(f"{sel}.overrideColor")
 
-            # Create joint at object pivot
-            pivot_pos = cmds.xform(obj, query=True, pivots=True, worldSpace=True)
-            jnt_name = obj.replace(NAMING["geo_sfx"], NAMING["jnt_sfx"])
-            jnt = cmds.joint(n=jnt_name, sc=False, position=pivot_pos[:3])
 
-            if root_joint:
-                jnt = cmds.parent(jnt, root_joint)[0]
-            else:
-                cmds.parent(jnt, self.jnt_grp)
+        ctrl_name = sel if sel.endswith(NAMING.ctrl_sfx) else f"{sel}{NAMING.ctrl_sfx}"
+        controls.replace_shape(target=sel, replacement=temp_curve, mirror=False)
+        controls.apply_color(ctrl_name, old_color)
+        controls.apply_thickness(ctrl_name, old_thickness)
 
-            # Skin mesh to joint
-            cmds.skinCluster(obj, jnt, toSelectedBones=True)
-            self.joints_list.append(jnt)
+        if cmds.objExists(sel) and sel != ctrl_name:
+            cmds.rename(sel, ctrl_name)
 
-    def create_controls(self, shape: str, joints: List):
-        """Generates offset groups and control curves for each joint"""
-        self.offset_control_list = []
-        self.control_list = []
+    if cmds.objExists(temp_curve):
+        cmds.delete(temp_curve)
 
+
+def lock_and_hide(node: str) -> None:
+    """Locks and disables keying for translate, rotate, and scale attributes on a node"""
+    for attr in ['tx', 'ty', 'tz', 'rx', 'ry', 'rz', 'sx', 'sy', 'sz']:
+        cmds.setAttr(f"{node}.{attr}", l=1, k=0)
+
+
+def lock_and_hide_grp(grp: str) -> None:
+    """Locks and hides transform attributes for all children groups"""
+    if grp and cmds.objExists(grp):
+        lock_and_hide(grp)
+        children = cmds.listRelatives(grp, allDescendents=True, fullPath=True, type="transform") or []
+        for child in children:
+            lock_and_hide(child)
+
+
+def build_rig(config: RigConfig) -> Rig:
+    """Executes the full rigging pipeline for the selected mesh objects."""
+    rig = Rig()
+    rig.objects_list = cmds.ls(sl=True) or []
+    rig.mesh_xform_list = [
+        obj for obj in rig.objects_list
+        if cmds.listRelatives(obj, type="mesh", path=True) is not None
+    ]
+
+    create_groups(rig)
+    prepare_geometry(rig)
+    create_joints(rig, make_root=config.make_root)
+
+    if config.build_mode != "JointsOnly":
+        create_controls(rig, config)
+        lock_and_hide_grp(rig.geo_grp)
+        lock_and_hide_grp(rig.jnt_grp)
+
+        if config.create_display_layers:
+            setup_display_layers(rig)
+
+        ctrls = cmds.select(rig.ctrl_list, replace=True)
+        controls.apply_color(sel=ctrls,color=config.ctrl_color)
+
+    return rig
+
+
+def create_groups(rig: Rig) -> None:
+    """Creates the main group and its geo/joint/control subgroups."""
+    rig.main_grp = cmds.group(n=NAMING.main_grp, em=True)
+    rig.geo_grp = cmds.group(n=NAMING.geo_grp, em=True)
+    rig.jnt_grp = cmds.group(n=NAMING.jnt_grp, em=True)
+    rig.ctrl_grp = cmds.group(n=NAMING.ctrl_grp, em=True)
+
+    cmds.parent([rig.geo_grp, rig.jnt_grp, rig.ctrl_grp], rig.main_grp)
+
+
+def prepare_geometry(rig: Rig) -> None:
+    """Renames meshes with the geo suffix and parents them under geo_grp."""
+    processed_geo_list = []
+    for obj in rig.mesh_xform_list:
+        geo_name = obj
+        # Add suffix if it doesn't already end with geo_sfx
+        if not obj.endswith(NAMING.geo_sfx):
+            geo_name = cmds.rename(obj, obj + NAMING.geo_sfx)
+
+        cmds.parent(geo_name, rig.geo_grp)
+        processed_geo_list.append(geo_name)
+
+    rig.mesh_xform_list = processed_geo_list
+
+
+def create_joints(rig: Rig, make_root: bool = True) -> None:
+    """Creates joints at mesh pivots and binds each mesh to its joint."""
+    rig.joints_list = []
+    root_joint = None
+
+    if make_root:
         cmds.select(clear=True)
-        for jnt in joints:
-            ctrl_name = jnt.replace(NAMING["jnt_sfx"], NAMING["ctrl_sfx"])
-            off_name = jnt.replace(NAMING["jnt_sfx"], NAMING["off_sfx"])
+        root_joint = cmds.joint(n=NAMING.root_jnt, sc=False)
+        cmds.parent(root_joint, rig.jnt_grp)
+        rig.root_jnt = root_joint
 
-            # Create offset group
-            offset_grp = cmds.group(em=True, n=off_name)
-            self.offset_control_list.append(offset_grp)
+    for obj in rig.mesh_xform_list:
+        cmds.select(clear=True)
 
-            # Match joint transform
-            jnt_pos = cmds.xform(jnt, query=True, translation=True, worldSpace=True)
-            cmds.xform(offset_grp, translation=jnt_pos, worldSpace=True)
+        # Create joint at object pivot
+        pivot_pos = cmds.xform(obj, query=True, pivots=True, worldSpace=True)
+        jnt_name = obj.replace(NAMING.geo_sfx, NAMING.jnt_sfx)
+        jnt = cmds.joint(n=jnt_name, sc=False, position=pivot_pos[:3])
 
-            # Create control curve, rename it, and parent under offset group
-            ctrl = self.utils.bsDrawCurve(curve=shape, thickness=1.0)
-            ctrl = cmds.rename(ctrl, ctrl_name)
+        if root_joint:
+            jnt = cmds.parent(jnt, root_joint)[0]
+        else:
+            jnt = cmds.parent(jnt, rig.jnt_grp)[0]
 
-            cmds.parent(ctrl, offset_grp)
-            cmds.xform(ctrl, translation=[0, 0, 0], rotation=[0, 0, 0])
-            cmds.parent(offset_grp, self.ctrl_grp)
-
-            # Constrain joint to control
-            cmds.parentConstraint(ctrl, jnt, mo=True)
-            self.control_list.append(ctrl)
+        # Skin mesh to joint
+        cmds.skinCluster(obj, jnt, toSelectedBones=True)
+        rig.joints_list.append(jnt)
 
 
+def create_controls(rig: Rig, config: RigConfig) -> None:
+    """Generates offset groups and control curves for each joint"""
+    rig.offset_control_list = []
+    rig.ctrl_list = []
+
+    cmds.select(clear=True)
+
+    # TODO create root control
+
+    for jnt in rig.joints_list:
+        ctrl_name = jnt.replace(NAMING.jnt_sfx, NAMING.ctrl_sfx)
+        off_name = jnt.replace(NAMING.jnt_sfx, NAMING.off_sfx)
+
+        # Create offset group and match joint position
+        offset_grp = cmds.group(em=True, n=off_name)
+        rig.offset_control_list.append(offset_grp)
+
+        jnt_pos = cmds.xform(jnt, query=True, translation=True, worldSpace=True)
+        cmds.xform(offset_grp, translation=jnt_pos, worldSpace=True)
+
+        # Create control curve and parent under offset group
+        ctrl = controls.draw_curve(curve=config.ctrl_shape, thickness=config.ctrl_thickness, size=config.ctrl_size)
+        controls.apply_color(ctrl, config.ctrl_color)
+        ctrl = cmds.rename(ctrl, ctrl_name)
+
+        cmds.parent(ctrl, offset_grp)
+        cmds.xform(ctrl, translation=[0, 0, 0], rotation=[0, 0, 0])
+        cmds.parent(offset_grp, rig.ctrl_grp)
+
+        # Constrain joint to control
+        cmds.parentConstraint(ctrl, jnt, mo=True)
+        rig.ctrl_list.append(ctrl)
 
 
+def _make_display_layer(name: str, members: str, **kwargs) -> str:
+    """Recreates a display layer by name and adds members to it."""
+    if cmds.objExists(name):
+        cmds.delete(name)
+    layer = cmds.createDisplayLayer(name=name, number=1, empty=True)
+    cmds.editDisplayLayerMembers(layer, members, **kwargs)
+    return layer
 
-    def replaceControls(self, shape, selection):
-        # Draw temporary reference curve
-        temp_curve = self.utils.bsDrawCurve(curve=shape)
 
-        for sel in selection:
-            if not sel.endswith(NAMING["ctrl_sfx"]):
-                ctrl_name = f"{sel}{NAMING['ctrl_sfx']}"
-            else:
-                ctrl_name = sel
+def setup_display_layers(rig: Rig) -> None:
+    """Creates display layers for geometry, controls, and joints."""
+    # Geometry: reference mode so geo cannot be selected in the viewport
+    geo_layer = _make_display_layer(NAMING.geo_layer, rig.geo_grp)
+    cmds.setAttr(f"{geo_layer}.displayType", 2)
 
-            # Swap the shape onto the target control
-            self.utils.bsReplaceShape(target=sel, replacement=temp_curve, mirror=False)
+    # Controls: visible
+    _make_display_layer(NAMING.ctrl_layer, rig.ctrl_grp, noRecurse=True)
 
-            # Ensure proper naming
-            if cmds.objExists(sel) and sel != ctrl_name:
-                cmds.rename(sel, ctrl_name)
+    # Joints: hidden by default, reference mode
+    jnt_layer = _make_display_layer(NAMING.jnt_layer, rig.jnt_grp)
+    cmds.setAttr(f"{jnt_layer}.displayType", 2)
+    cmds.setAttr(f"{jnt_layer}.visibility", 0)
 
-        # Clean up the temporary curve
-        if cmds.objExists(temp_curve):
-            cmds.delete(temp_curve)
 
-    def lock_and_hide_grp(self, geo, jnt):
-        """Locks and hides transform attributes for all children in geometry and joint groups"""
-        for grp in [geo, jnt]:
-            if grp and cmds.objExists(grp):
-                # Lock the group itself
-                self.lock_and_hide(grp)
-
-                # Lock all children under the group
-                children = cmds.listRelatives(grp, allDescendents=True, fullPath=True, type="transform") or []
-                for child in children:
-                    self.lock_and_hide(child)
-
-    def lock_and_hide(self, node: str):
-        """Locks and disables keying translate, rotate, and scale attributes on a node"""
-        cmds.setAttr(node + '.tx', l=1, k=0)
-        cmds.setAttr(node + '.ty', l=1, k=0)
-        cmds.setAttr(node + '.tz', l=1, k=0)
-        cmds.setAttr(node + '.rx', l=1, k=0)
-        cmds.setAttr(node + '.ry', l=1, k=0)
-        cmds.setAttr(node + '.rz', l=1, k=0)
-        cmds.setAttr(node + '.sx', l=1, k=0)
-        cmds.setAttr(node + '.sy', l=1, k=0)
-        cmds.setAttr(node + '.sz', l=1, k=0)
-
-    def setup_display_layers(self):
-        """Creates Display Layers for geometry, controls, and joints."""
-
-        # Geometry Layer (Reference mode so geo cannot be selected in viewport)
-        if cmds.objExists(NAMING["geo_layer"]):
-            cmds.delete(NAMING["geo_layer"])
-        geo_layer = cmds.createDisplayLayer(name=NAMING["geo_layer"], number=1, empty=True)
-        cmds.editDisplayLayerMembers(geo_layer, self.geo_grp)
-        cmds.setAttr(f"{geo_layer}.displayType", 2)
-
-        # Controls Layer (Visible)
-        if cmds.objExists(NAMING["ctrl_layer"]):
-            cmds.delete(NAMING["ctrl_layer"])
-        ctrl_layer = cmds.createDisplayLayer(name=NAMING["ctrl_layer"], number=1, empty=True)
-        cmds.editDisplayLayerMembers(ctrl_layer, self.ctrl_grp, noRecurse=True)
-
-        # Joints Layer (Hidden by default, set to Reference mode)
-        jnt_layer_name = NAMING.get("jnt_layer", "JNT_layer")
-        if cmds.objExists(jnt_layer_name):
-            cmds.delete(jnt_layer_name)
-        jnt_layer = cmds.createDisplayLayer(name=jnt_layer_name, number=1, empty=True)
-        cmds.editDisplayLayerMembers(jnt_layer, self.jnt_grp)
-        cmds.setAttr(f"{jnt_layer}.displayType", 2)
-        cmds.setAttr(f"{jnt_layer}.visibility", 0)
+def clear_rig(rig: Rig) -> None:
+    # TODO Implement clear rig - delete joints and controls, reset constraints, ungroup objects
+    pass
