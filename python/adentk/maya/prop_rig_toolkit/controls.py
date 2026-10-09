@@ -65,7 +65,7 @@ def apply_color(sel, color):
 
 
 def apply_thickness(sel, thickness):
-    if not thickness > 1.0:
+    if not thickness >= 1.0:
         return
     for s in sel:
         crvShape = cmds.listRelatives(s, s=True)
@@ -73,7 +73,11 @@ def apply_thickness(sel, thickness):
             cmds.setAttr('%s.lineWidth' % c, thickness)
 
 # TODO debug
-def apply_scale(ctrls, scale):
+def apply_scale(ctrls, scale= 1.0):
+    """Scales the CV points of the target curve controls."""
+    if not ctrls or scale == 1.0:
+        return
+
     for ctrl in ctrls:
         shapes = cmds.listRelatives(ctrl, shapes=True, type="nurbsCurve", fullPath=True) or []
         if not shapes:
@@ -82,22 +86,35 @@ def apply_scale(ctrls, scale):
         cvs = [f"{s}.cv[*]" for s in shapes]
         pivot = cmds.xform(ctrl, query=True, worldSpace=True, rotatePivot=True)
 
-        if scale != (1, 1, 1):
-            cmds.scale(*scale, cvs, relative=True, objectSpace=True, pivot=pivot)
+        cmds.scale(
+            scale, scale, scale,
+            cvs,
+            relative=True,
+            pivot=pivot
+        )
 
 # TODO debug
-def apply_rotation(ctrls, rotate=(0,0,0)):
+def apply_rotation(ctrls, rotate=(0, 0, 0)):
+    """Rotates the CV points of the target curve controls without affecting their transforms."""
+    if not ctrls or not any(rotate):
+        return
+
     for ctrl in ctrls:
         shapes = cmds.listRelatives(ctrl, shapes=True, type="nurbsCurve", fullPath=True) or []
         if not shapes:
             continue
 
-        cvs = [f"{s}.cv[*]" for s in shapes]
+        # Query rotation pivot in WORLD space to ensure correct pivot placement during component transform
         pivot = cmds.xform(ctrl, query=True, worldSpace=True, rotatePivot=True)
 
-        if any(rotate):
-            cmds.rotate(*rotate, cvs, relative=True, objectSpace=True, pivot=pivot)
-
+        # Rotate each shape's CVs around the world space pivot point
+        for shape in shapes:
+            cmds.rotate(
+                rotate[0], rotate[1], rotate[2],
+                f"{shape}.cv[*]",
+                relative=True,
+                pivot=pivot
+            )
 
 # Function to draw nurbs curves from dictionary data and user input.
 def draw_curve(curve, thickness=1.0, size=1.0):
@@ -116,14 +133,16 @@ def draw_curve(curve, thickness=1.0, size=1.0):
         cmds.delete(circle)
 
     # Only adjusting the lineWidth attribute only if a value greater than 1.0 is input.
-    if thickness > 1.0:
+    if thickness >= 1.0:
         crvShape = cmds.listRelatives(crv, s=True)
         for c in crvShape:
             cmds.setAttr('%s.lineWidth' % c, thickness)
     else:
         pass
 
-    # TODO scale by size
+    # Apply size scaling via CV transformation
+        if size != 1.0:
+            apply_scale([crv], (size, size, size))
 
     return crv
 

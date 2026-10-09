@@ -412,7 +412,9 @@ class PropRiggingUI(QtWidgets.QDialog):
         rigging.replace_controls(shape, selection, self.ctrl_color)
 
     def on_rotate_ctrl(self, rotate=(0, 0, 0)) -> None:
-        controls.apply_rotation(rotate)
+        selection = cmds.ls(sl=True, l=True)
+        if selection:
+            controls.apply_rotation(ctrls=selection, rotate=rotate)
 
 def show_ui():
     maya_window = get_maya_main_window()
